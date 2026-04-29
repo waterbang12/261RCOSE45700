@@ -1,0 +1,37 @@
+# 환경변수
+.env
+
+# DB
+*.db
+
+# BMAD / Claude Code
+_bmad/
+_bmad-output/
+.agents/
+.claude/
+
+# MediaPipe 모델
+*.task
+
+# TTS 음성 캐시
+audio_cache/
+*.mp3
+
+# 얼굴 이미지 저장소
+saved_faces/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# VS Code
+.vscode/
+
+# 기타
+*.log
+.DS_Store
+*.pdf
