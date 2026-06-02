@@ -165,9 +165,15 @@ python test_modules.py
   [4] 멀티에이전트 시나리오                    ← 오케스트레이터 / actuator 개입 여부 확인
   [5] 전체 실행 (1~4)
   [6] 고객 응대 챗봇 (마이크 입력, 인터랙티브)  ← Whisper STT + TTS 재생
+  [7] STT 마이크 단독 테스트                   ← 마이크 → stt.py → 텍스트 확인
+  [8] STT 영상/오디오 파일 테스트              ← 파일 음성 → stt.py → 텍스트 확인
 ```
 
 [6]번 마이크 모드는 `sounddevice` + `soundfile`이 필요하다 (`pip install sounddevice soundfile`). Enter를 누르면 5초간 녹음 → Whisper로 한국어 전사 → customer_bot 응답 → TTS 자동 재생. Ctrl+C로 종료.
+
+[7]번은 customer bot 없이 마이크 입력이 `llm_module/stt.py`를 통해 정상 전사되는지만 확인한다. 마이크 장치 목록을 출력하고 특정 장치 ID/이름을 선택할 수 있다.
+
+[8]번은 저장된 영상/오디오 파일에서 음성을 전사한다. 영상 파일(`mp4`, `mov`, `avi` 등)은 로컬에 `ffmpeg`가 설치되어 있어야 오디오를 추출할 수 있다. 라이브 RTSP 영상의 실시간 오디오는 별도 캡처 단계가 필요하므로 현재는 저장된 파일 테스트용이다.
 
 **[4] 멀티에이전트 시나리오** 테스트는 다음 3가지 경로를 검증한다:
 

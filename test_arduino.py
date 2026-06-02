@@ -1,6 +1,6 @@
 import serial
 import time
-
+ # test working
 PORT = "COM3"  # change to your Arduino port
 
 arduino = serial.Serial(PORT, 9600, timeout=1)

@@ -48,7 +48,7 @@ async def test_customer_bot_mic():
     print("준비물: 마이크. (sounddevice/soundfile 미설치 시 pip install 필요)")
 
     try:
-        from llm_module.stt import record_and_transcribe, play_audio
+        from llm_module.stt import record_and_transcribe, play_audio, list_input_devices
     except ImportError as e:
         print(f"[ERROR] STT 모듈 import 실패: {e}")
         print("→ pip install sounddevice soundfile")
@@ -61,6 +61,13 @@ async def test_customer_bot_mic():
         seconds = float(input("녹음 길이 초 (기본 5): ").strip() or "5")
     except ValueError:
         seconds = 5.0
+    show_devices = input("마이크 장치 목록을 볼까요? (y/N): ").strip().lower() == "y"
+    if show_devices:
+        list_input_devices()
+    device_text = input("사용할 입력 장치 ID/이름 (기본 장치 사용 시 Enter): ").strip()
+    device = device_text if device_text else None
+    if device_text.isdigit():
+        device = int(device_text)
 
     context = {
         "customer_name": "테스터",
@@ -80,7 +87,7 @@ async def test_customer_bot_mic():
             return
 
         try:
-            text = await record_and_transcribe(seconds=seconds)
+            text = await record_and_transcribe(seconds=seconds, device=device)
         except KeyboardInterrupt:
             print("\n[종료]")
             return
@@ -103,6 +110,77 @@ async def test_customer_bot_mic():
             print(f"[TTS] 재생: {audio_path}")
             play_audio(audio_path)
         print()
+
+
+async def test_stt_mic_only():
+    """마이크 → Whisper STT 단독 테스트."""
+    print("\n" + "="*50)
+    print("[ STT 마이크 단독 테스트 ]")
+    print("="*50)
+    print("목적: 마이크 입력이 stt.py를 통해 텍스트로 변환되는지만 확인")
+
+    try:
+        from llm_module.stt import record_and_transcribe, list_input_devices
+    except ImportError as e:
+        print(f"[ERROR] STT 모듈 import 실패: {e}")
+        print("→ pip install sounddevice soundfile")
+        return
+
+    try:
+        seconds = float(input("녹음 길이 초 (기본 5): ").strip() or "5")
+    except ValueError:
+        seconds = 5.0
+
+    if input("마이크 장치 목록을 볼까요? (y/N): ").strip().lower() == "y":
+        list_input_devices()
+    device_text = input("사용할 입력 장치 ID/이름 (기본 장치 사용 시 Enter): ").strip()
+    device = device_text if device_text else None
+    if device_text.isdigit():
+        device = int(device_text)
+
+    while True:
+        try:
+            input("→ Enter를 눌러 녹음 시작 (Ctrl+C 종료)...")
+            text = await record_and_transcribe(seconds=seconds, device=device)
+        except (EOFError, KeyboardInterrupt):
+            print("\n[종료]")
+            return
+        except Exception as e:
+            print(f"[STT ERROR] {e}")
+            continue
+
+        print(f"[STT RESULT] {text or '(인식 결과 없음)'}")
+
+
+async def test_stt_video_file():
+    """저장된 영상/오디오 파일 → Whisper STT 테스트."""
+    print("\n" + "="*50)
+    print("[ STT 영상/오디오 파일 테스트 ]")
+    print("="*50)
+    print("영상 파일에서 음성을 가져오는 경우 ffmpeg가 필요합니다.")
+
+    try:
+        from llm_module.stt import transcribe_audio_file, transcribe_video_file
+    except ImportError as e:
+        print(f"[ERROR] STT 모듈 import 실패: {e}")
+        return
+
+    path = input("영상/오디오 파일 경로 입력: ").strip().strip('"')
+    if not path:
+        print("[STT] 파일 경로가 비어 있습니다.")
+        return
+
+    lower = path.lower()
+    try:
+        if lower.endswith((".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg")):
+            text = await transcribe_audio_file(path)
+        else:
+            text = await transcribe_video_file(path)
+    except Exception as e:
+        print(f"[STT ERROR] {e}")
+        return
+
+    print(f"[STT RESULT] {text or '(인식 결과 없음)'}")
 
 
 async def test_report_generator():
@@ -206,6 +284,8 @@ TESTS = {
     "4": ("멀티에이전트 시나리오",                test_multi_agent),
     "5": ("전체 실행 (1~4, 마이크 모드 제외)",    None),
     "6": ("고객 응대 챗봇 (마이크 입력, 인터랙티브)", test_customer_bot_mic),
+    "7": ("STT 마이크 단독 테스트",               test_stt_mic_only),
+    "8": ("STT 영상/오디오 파일 테스트",          test_stt_video_file),
 }
 
 async def main():
@@ -221,7 +301,7 @@ async def main():
     if choice == "5":
         for k, (name, fn) in TESTS.items():
             # 마이크 모드는 인터랙티브라 자동 실행 제외
-            if fn and k != "6":
+            if fn and k not in {"6", "7", "8"}:
                 await fn()
     elif choice in TESTS:
         _, fn = TESTS[choice]
