@@ -5,6 +5,9 @@ httpx>=0.27.0
 aiosqlite>=0.20.0
 python-dotenv>=1.0.0
 langgraph>=0.2.0
+# Arduino 액추에이터 데모 (camera_arduino_demo.py / mock_latency_demo.py) — 보드 없으면 미설치해도 mock 모드로 동작
+pyserial>=3.5
+# 참고: opencv-contrib-python 이 일반 opencv-python 을 포함하며, face_detection.py 의 cv2.face(LBPH)는 contrib 전용이므로 opencv-python 은 별도 추가하지 않는다.
 # STT (test_modules의 마이크 입력 모드용 — 헤드리스 서버에는 미설치해도 무방)
 sounddevice>=0.4.6
 soundfile>=0.12.1

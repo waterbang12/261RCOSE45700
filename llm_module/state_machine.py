@@ -5,6 +5,8 @@ OpenCV 팀원이 trigger_signals를 넘겨주면 이 모듈이 VLM 호출 여부
 """
 import time
 import asyncio
+import os
+from dataclasses import asdict
 from dataclasses import dataclass, field
 from collections import deque
 from llm_module.vlm_analyzer import analyze, DetectionType, AnalysisResult
@@ -14,6 +16,7 @@ INFER_INTERVAL_SEC   = 1.0   # VLM 최소 호출 간격
 TRIGGER_COUNT        = 2     # 윈도우 안에서 몇 번 감지돼야 트리거
 TRIGGER_WINDOW_SEC   = 10.0  # 몇 초 안에 TRIGGER_COUNT번 감지돼야 하는지
 CONFIDENCE_THRESHOLD = 0.70
+TRACE_CAMERA_DATA = os.getenv("TRACE_CAMERA_DATA", "1") == "1"
 
 
 @dataclass
@@ -23,6 +26,7 @@ class TriggerSignals:
     theft:            bool = False   # 손이 상품/보관 구역 근접
     property_damage:  bool = False   # 빠른 충격성 움직임 감지
     fall_emergency:   bool = False   # 수평 자세 + 정지
+    body_sway:        bool = False   # 어깨 중심점 과도한 흔들림 (BodySwayDetector)
     person_count:     int  = 0       # 구역 내 인원 수
     activity_count:   int  = 0       # 누적 활동 횟수
     temperature:      float = 0.0   # 현재 온도 (센서)
@@ -60,7 +64,7 @@ class ZoneStateMachine:
             DetectionType.SWEAT_WIPING:    signals.sweat_wiping,
             DetectionType.THEFT:           signals.theft,
             DetectionType.PROPERTY_DAMAGE: signals.property_damage,
-            DetectionType.FALL_EMERGENCY:  signals.fall_emergency,
+            DetectionType.FALL_EMERGENCY:  signals.fall_emergency or signals.body_sway,
         }
 
         # 센서 선제 판단: 온도/습도 임계값 초과 시 sweat_wiping 강제 활성화
@@ -95,6 +99,13 @@ class ZoneStateMachine:
         if now - state.last_infer_time < INFER_INTERVAL_SEC:
             return
         state.last_infer_time = now
+
+        if TRACE_CAMERA_DATA:
+            print(
+                f"[{self.zone_id}][DATA][STATE->VLM] "
+                f"detection_type={dt.value} frames={len(frames)} "
+                f"signals={asdict(signals)}"
+            )
 
         try:
             result: AnalysisResult = await analyze(frames, dt, CONFIDENCE_THRESHOLD)
@@ -150,6 +161,8 @@ class ZoneStateMachine:
                 "humidity": signals.humidity,
             },
         )
+        if TRACE_CAMERA_DATA:
+            print(f"[{self.zone_id}][DATA][STATE->AGENT] {state}")
         await facility_graph.ainvoke(state)
 
     async def _get_frames(self) -> list:
