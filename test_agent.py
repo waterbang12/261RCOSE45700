@@ -364,6 +364,8 @@ async def run_scenario(s: Scenario, web_client=None) -> dict:
             "expected_route": s.expected_route,
             "input": _input_struct(s),
         })
+    
+    input_fields = _input_struct(s)
 
     def _on_line(line: str):
         if web_client is None:
@@ -373,6 +375,7 @@ async def run_scenario(s: Scenario, web_client=None) -> dict:
             "node": m.group(1) if m else None,
             "line": line,
             "source": "test_agent",
+            **input_fields,
         })
 
     writer = _LineForwarder(_on_line)
@@ -440,6 +443,7 @@ def _slim_state(s: dict | None) -> dict:
         return {}
     keep = (
         "trigger_type", "zone_id",
+        "user_message", "analysis_result", "signals",
         "bot_response", "orchestrator_decision",
         "cross_zone_request", "conflict_detected", "anomaly_detected",
         "report_text", "pending_actions",

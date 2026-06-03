@@ -233,10 +233,12 @@ async def _run_and_broadcast(name: str, state: dict, source: str) -> None:
     """그래프 실행 + stdout 캡처 → broadcast."""
     from llm_module.graph import facility_graph
 
+    input_summary = _input_from_state(state)
+
     await broadcast("start", {
         "name": name,
         "source": source,
-        "input": _input_from_state(state),
+        "input": input_summary,
     })
     loop = asyncio.get_running_loop()
     line_q: asyncio.Queue = asyncio.Queue()
@@ -263,6 +265,7 @@ async def _run_and_broadcast(name: str, state: dict, source: str) -> None:
                 "node": m.group(1) if m else None,
                 "line": line,
                 "source": source,
+                **input_summary,
             })
 
     emit_task = asyncio.create_task(emit_lines())
@@ -272,7 +275,7 @@ async def _run_and_broadcast(name: str, state: dict, source: str) -> None:
         await asyncio.sleep(0.05)  # 마지막 라인이 큐로 flush 되도록
         await broadcast("done", {
             "name": name, "source": source,
-            "input": _input_from_state(state),
+            "input": input_summary,
             "state": _serialize_state(result),
         })
     except Exception as e:
@@ -295,6 +298,7 @@ def _sse(event: str, data: dict) -> str:
 def _serialize_state(s: dict) -> dict:
     keep = (
         "trigger_type", "zone_id",
+        "user_message", "analysis_result", "signals",
         "bot_response", "orchestrator_decision",
         "cross_zone_request", "conflict_detected", "anomaly_detected",
         "report_text", "pending_actions",

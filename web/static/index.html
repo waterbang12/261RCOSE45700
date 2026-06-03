@@ -1,396 +1,2039 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
+
 <head>
-<meta charset="UTF-8" />
-<title>무인 매장 멀티에이전트 흐름</title>
-<style>
-  :root {
-    --bg: #1e1e2e;
-    --panel: #181825;
-    --card: #313244;
-    --border: #45475a;
-    --text: #cdd6f4;
-    --muted: #a6adc8;
-    --accent: #cba6f7;
-    --warn: #fab387;
-    --ok: #a6e3a1;
-    --err: #f38ba8;
-    --info: #89dceb;
-  }
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
-    background: var(--bg); color: var(--text);
-    margin: 0; padding: 24px; min-height: 100vh;
-  }
-  h1 { font-size: 1.4em; margin: 0 0 4px; }
-  .subtitle { color: var(--muted); font-size: 0.85em; margin-bottom: 20px; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cafe Check — AI Dashboard</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  .layout { display: grid; grid-template-columns: 1fr 440px; gap: 20px; }
-  .panel { background: var(--panel); border-radius: 12px; padding: 20px; }
-  .panel h2 {
-    font-size: 0.95em; margin: 0 0 12px; color: var(--warn);
-    text-transform: uppercase; letter-spacing: 0.5px;
-  }
+    :root {
+      --bg: #0d0d0d;
+      --surface: #141414;
+      --surface2: #1c1c1c;
+      --border: #2a2a2a;
+      --accent: #e8ff47;
+      --accent2: #47c8ff;
+      --danger: #ff4747;
+      --warning: #ffaa47;
+      --ok: #47ff8f;
+      --text: #f0f0f0;
+      --muted: #555;
+      --font: 'Inter', system-ui, sans-serif;
+      --radius: 10px;
+    }
 
-  /* ── 그래프 ─────────────────────────────────────────────────────────── */
-  .graph-row {
-    display: grid;
-    grid-template-columns: auto auto auto auto auto auto auto auto auto;
-    align-items: center; gap: 8px;
-  }
-  .branch { display: flex; flex-direction: column; gap: 10px; }
-  .node {
-    background: var(--card); border: 2px solid var(--border);
-    border-radius: 10px; padding: 14px 16px; text-align: center;
-    min-width: 130px; transition: all 0.35s ease;
-  }
-  .node .ttl { font-weight: 600; font-size: 0.92em; margin: 0; }
-  .node .sub { font-size: 0.7em; color: var(--muted); margin: 3px 0 0; }
-  .node.dim { opacity: 0.42; }
-  .node.passed {
-    border-color: var(--ok);
-    background: rgba(166, 227, 161, 0.08);
-  }
-  .node.active {
-    border-color: var(--accent);
-    background: var(--accent); color: var(--bg);
-    transform: scale(1.06);
-    box-shadow: 0 0 22px rgba(203, 166, 247, 0.6);
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-  .node.active .sub { color: rgba(30, 30, 46, 0.7); }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 22px rgba(203, 166, 247, 0.6); }
-    50%      { box-shadow: 0 0 36px rgba(203, 166, 247, 0.9); }
-  }
-  .arrow { color: var(--warn); font-size: 1.3em; font-weight: bold; user-select: none; }
-  .terminal {
-    background: transparent; border: 2px dashed var(--border);
-    color: var(--muted); padding: 12px 14px;
-    border-radius: 999px; min-width: 70px; text-align: center;
-    font-size: 0.85em;
-  }
-  .terminal.active {
-    border-color: var(--ok); color: var(--ok);
-    box-shadow: 0 0 16px rgba(166, 227, 161, 0.5);
-  }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
 
-  .legend { margin-top: 18px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.78em; color: var(--muted); }
-  .legend span::before { content: "■"; margin-right: 4px; }
-  .legend .l-active::before { color: var(--accent); }
-  .legend .l-passed::before { color: var(--ok); }
-  .legend .l-dim::before    { color: var(--border); }
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
 
-  /* ── 우측 패널 ──────────────────────────────────────────────────────── */
-  .conn {
-    display: inline-block; padding: 2px 8px; border-radius: 4px;
-    font-size: 0.7em; font-weight: 600;
-    background: var(--card); color: var(--muted); margin-left: 8px;
-  }
-  .conn.live { background: var(--ok); color: var(--bg); }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
 
-  .scenarios { display: flex; flex-direction: column; gap: 8px; }
-  .scenarios button {
-    background: var(--card); color: var(--text);
-    border: 1px solid var(--border);
-    padding: 10px 12px; border-radius: 6px; cursor: pointer;
-    text-align: left; font-size: 0.85em; transition: background 0.15s;
-  }
-  .scenarios button:hover:not(:disabled) { background: var(--border); }
-  .scenarios button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .brand-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 2s infinite;
+    }
 
-  .now {
-    margin-top: 14px; padding: 10px 12px; border-radius: 6px;
-    background: #11111b; font-size: 0.82em;
-  }
-  .now .label { color: var(--muted); font-size: 0.78em; }
-  .now .name { font-weight: 600; }
-  .now .summary { color: var(--info); font-family: "Cascadia Code", Consolas, monospace;
-                  font-size: 0.78em; margin-top: 4px; word-break: break-all; }
-  .now .src { display: inline-block; font-size: 0.7em; padding: 1px 6px;
-              border-radius: 4px; margin-left: 6px; }
-  .src.web        { background: rgba(203,166,247,0.2); color: var(--accent); }
-  .src.test_agent { background: rgba(137,220,235,0.2); color: var(--info); }
+    .brand h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
 
-  .logs {
-    margin-top: 14px;
-    background: #11111b; border-radius: 6px;
-    padding: 10px; font-family: "Cascadia Code", Consolas, monospace;
-    font-size: 0.72em; line-height: 1.45;
-    height: 320px; overflow-y: auto;
-  }
-  .log-line { margin: 1px 0; word-break: break-all; white-space: pre-wrap; }
-  .log-line.node-evt    { color: var(--accent); font-weight: 600; }
-  .log-line.system      { color: var(--warn); }
-  .log-line.system.test { color: var(--info); }
-  .log-line.ok          { color: var(--ok); }
-  .log-line.err         { color: var(--err); }
+    .brand span {
+      font-size: 11px;
+      color: var(--muted);
+      margin-left: 4px;
+    }
 
-  .result {
-    margin-top: 12px; background: #11111b; border-radius: 6px;
-    padding: 10px; font-size: 0.78em;
-    max-height: 280px; overflow: auto;
-  }
-  .result h3 { margin: 0 0 6px; font-size: 0.85em; color: var(--warn); }
-  .result pre { margin: 0; white-space: pre-wrap; word-break: break-all; color: var(--text); }
-</style>
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 11px;
+      color: var(--ok);
+    }
+
+    .status-pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ok);
+      animation: pulse 2s infinite;
+    }
+
+    #clock {
+      font-size: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #signal-indicator {
+      font-size: 10px;
+      color: var(--muted);
+      padding: 4px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    /* ── SCENARIO BUTTONS ── */
+    .scenario-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .scenario-bar button {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .scenario-bar button:hover:not(:disabled) {
+      background: var(--accent);
+      color: #000;
+      border-color: var(--accent);
+    }
+
+    .scenario-bar button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .scenario-bar button.running {
+      background: var(--surface2);
+      color: var(--muted);
+      border-color: var(--border);
+      cursor: not-allowed;
+    }
+
+    /* ── GRAPH FLOW BAR ── */
+    .graph-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow-x: auto;
+    }
+
+    .graph-bar::-webkit-scrollbar {
+      height: 3px;
+    }
+
+    .graph-bar::-webkit-scrollbar-thumb {
+      background: var(--border);
+    }
+
+    .g-node {
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      text-align: center;
+      min-width: 110px;
+      transition: all 0.3s ease;
+      flex-shrink: 0;
+    }
+
+    .g-node .g-ttl {
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .g-node .g-sub {
+      font-size: 9px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .g-node.dim {
+      opacity: 0.35;
+    }
+
+    .g-node.passed {
+      border-color: var(--ok);
+      background: rgba(71, 255, 143, 0.07);
+    }
+
+    .g-node.passed .g-ttl {
+      color: var(--ok);
+    }
+
+    .g-node.active {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #000;
+      transform: scale(1.06);
+      box-shadow: 0 0 18px rgba(232, 255, 71, 0.5);
+      animation: nodeGlow 1.4s ease-in-out infinite;
+    }
+
+    .g-node.active .g-sub {
+      color: rgba(0, 0, 0, 0.6);
+    }
+
+    @keyframes nodeGlow {
+
+      0%,
+      100% {
+        box-shadow: 0 0 18px rgba(232, 255, 71, 0.5);
+      }
+
+      50% {
+        box-shadow: 0 0 32px rgba(232, 255, 71, 0.9);
+      }
+    }
+
+    .g-terminal {
+      background: transparent;
+      border: 2px dashed var(--border);
+      color: var(--muted);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 10px;
+      text-align: center;
+      flex-shrink: 0;
+      min-width: 55px;
+      transition: all 0.3s;
+    }
+
+    .g-terminal.active {
+      border-color: var(--ok);
+      color: var(--ok);
+      box-shadow: 0 0 12px rgba(71, 255, 143, 0.4);
+    }
+
+    .g-terminal.passed {
+      border-color: var(--ok);
+      color: var(--ok);
+      opacity: 0.6;
+    }
+
+    .g-arrow {
+      color: var(--warning);
+      font-size: 14px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    .g-branch {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* ── MAIN GRID ── */
+    main {  
+      flex: 1;  
+      display: grid;  
+      grid-template-columns: 1fr 1fr 320px;  
+      grid-template-rows: 1fr;   /* ← ADD: locks row height to available space */  
+      gap: 1px;  
+      background: var(--border);  
+      overflow: hidden;  
+      min-height: 0;  
+    }
+
+    .panel {  
+      background: var(--bg);  
+      display: flex;  
+      flex-direction: column;  
+      overflow: hidden;  
+      min-height: 0;  
+      height: 100%;          /* ← ADD: gives children a real height to fill */  
+      max-height: 100%;      /* ← ADD: prevents it from growing beyond grid cell */  
+    }  
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .panel-title .icon {
+      font-size: 14px;
+    }
+
+    .badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .badge.live {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* ── SIGNAL FEED ── */
+    #signal-feed {  
+      flex: 1;  
+      overflow-y: auto;  
+      overflow-x: hidden;    /* ← ADD for safety */  
+      padding: 16px;  
+      display: flex;  
+      flex-direction: column;  
+      gap: 8px;  
+      min-height: 0;  
+    } 
+
+    #signal-feed::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #signal-feed::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--muted);
+      padding: 40px;
+      text-align: center;
+    }
+
+    .empty-icon {
+      font-size: 32px;
+      opacity: 0.3;
+    }
+
+    .empty-text {
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .signal-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      animation: slideIn 0.35s ease;
+      transition: border-color 0.2s;
+      flex-shrink: 0;
+    }
+
+    .signal-card:hover {
+      border-color: #3a3a3a;
+    }
+
+    .signal-card.s-ok {
+      border-left: 3px solid var(--ok);
+    }
+
+    .signal-card.s-warn {
+      border-left: 3px solid var(--warning);
+    }
+
+    .signal-card.s-danger {
+      border-left: 3px solid var(--danger);
+    }
+
+    .signal-card.s-info {
+      border-left: 3px solid var(--accent2);
+    }
+
+    .signal-icon {
+      font-size: 18px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .signal-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .signal-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .signal-source {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    .signal-time {
+      font-size: 10px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .signal-msg {
+      font-size: 12px;
+      color: #aaa;
+      line-height: 1.5;
+    }
+
+    .signal-tag {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── ZONE BADGE inside signal cards ── */
+    .signal-zone {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #1a1a2e;
+      color: var(--accent2);
+      border: 1px solid rgba(71, 200, 255, 0.2);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-right: 6px;
+    }
+
+    /* Make strong text inside signal-msg stand out */
+    .signal-msg strong {
+      font-weight: 700;
+    }
+
+
+    .tag-ok {
+      background: #0a2e1a;
+      color: var(--ok);
+    }
+
+    .tag-warn {
+      background: #2e1e0a;
+      color: var(--warning);
+    }
+
+    .tag-danger {
+      background: #2e0a0a;
+      color: var(--danger);
+    }
+
+    .tag-info {
+      background: #0a1e2e;
+      color: var(--accent2);
+    }
+
+    .signal-index {
+      font-size: 9px;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 6px;
+    }
+
+    /* ══════════════════════════════════════════
+       ACTION CARDS — Human-Readable Design
+    ══════════════════════════════════════════ */
+    #action-panel {  
+      flex: 1;  
+      overflow-y: auto;  
+      overflow-x: hidden;  
+      padding: 16px;  
+      display: flex;  
+      flex-direction: column;  
+      gap: 12px;  
+      min-height: 0;         /* ← KEEP this */
+      flex-shrink: 0;
+    }
+
+    /* The big readable card */
+    .action-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      animation: slideIn 0.4s ease;
+      flex-shrink: 0;
+    }
+
+    /* Coloured top banner */
+    .action-banner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+    }
+
+    .action-banner.banner-high {
+      background: rgba(255, 71, 71, 0.12);
+      border-bottom: 1px solid rgba(255, 71, 71, 0.2);
+    }
+
+    .action-banner.banner-med {
+      background: rgba(255, 170, 71, 0.10);
+      border-bottom: 1px solid rgba(255, 170, 71, 0.2);
+    }
+
+    .action-banner.banner-low {
+      background: rgba(71, 200, 255, 0.08);
+      border-bottom: 1px solid rgba(71, 200, 255, 0.2);
+    }
+
+    .action-banner.banner-auto {
+      background: rgba(71, 255, 143, 0.08);
+      border-bottom: 1px solid rgba(71, 255, 143, 0.2);
+    }
+
+    .action-banner.banner-info {
+      background: rgba(71, 200, 255, 0.08);
+      border-bottom: 1px solid rgba(71, 200, 255, 0.2);
+    }
+
+    .action-big-icon {
+      font-size: 28px;
+      flex-shrink: 0;
+    }
+
+    .action-banner-text {
+      flex: 1;
+    }
+
+    .action-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 3px;
+    }
+
+    .action-subtitle {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .action-urgency-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      letter-spacing: 0.06em;
+      flex-shrink: 0;
+    }
+
+    .urg-high {
+      background: rgba(255, 71, 71, 0.18);
+      color: var(--danger);
+      border: 1px solid var(--danger);
+    }
+
+    .urg-med {
+      background: rgba(255, 170, 71, 0.18);
+      color: var(--warning);
+      border: 1px solid var(--warning);
+    }
+
+    .urg-low {
+      background: rgba(71, 200, 255, 0.18);
+      color: var(--accent2);
+      border: 1px solid var(--accent2);
+    }
+
+    .urg-auto {
+      background: rgba(71, 255, 143, 0.18);
+      color: var(--ok);
+      border: 1px solid var(--ok);
+    }
+
+    .urg-info {
+      background: rgba(71, 200, 255, 0.18);
+      color: var(--accent2);
+      border: 1px solid var(--accent2);
+    }
+
+    /* Body of the card */
+    .action-body {
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Plain-English summary */
+    .action-summary {
+      font-size: 13px;
+      color: #ddd;
+      line-height: 1.65;
+      padding: 10px 14px;
+      background: var(--surface2);
+      border-radius: 8px;
+      border-left: 3px solid var(--border);
+    }
+
+    /* What-to-do steps */
+    .action-steps-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .action-steps {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .action-steps li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 12px;
+      color: #ccc;
+      line-height: 1.5;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Footer row */
+    .action-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--surface2);
+    }
+
+    .action-footer-left {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .action-source-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .action-source-val {
+      font-size: 11px;
+      color: #aaa;
+    }
+
+    .action-btn {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 7px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .action-btn:hover {
+      background: var(--accent);
+      color: #000;
+      border-color: var(--accent);
+    }
+
+    .action-btn.done {
+      color: var(--ok);
+      border-color: var(--ok);
+      background: rgba(71, 255, 143, 0.08);
+      cursor: default;
+    }
+
+    /* ── STATS PANEL ── */
+    .stats-panel {
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .stat-block {
+      background: var(--surface);
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .stat-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .stat-bar {
+      margin-top: 10px;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .stat-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.6s ease;
+    }
+
+    /* ── MODULE STATUS ── */
+    .llm-block {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .llm-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+
+    .llm-status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+    }
+
+    .llm-name {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .llm-state {
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+    }
+
+    .llm-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .llm-dot.ready {
+      background: var(--ok);
+      box-shadow: 0 0 6px var(--ok);
+    }
+
+    .llm-dot.pending {
+      background: var(--warning);
+      animation: pulse 1.2s infinite;
+    }
+
+    /* ── SENSOR GRID ── */
+    .sensor-section {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .sensor-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+
+    .sensor-tile .s-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .sensor-tile .s-val {
+      font-size: 18px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sensor-tile .s-unit {
+      font-size: 10px;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    .sensor-tile .s-num {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    /* ── LIVE LOG ── */
+    .log-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 16px 20px;
+    }
+
+    .log-section .llm-label {
+      margin-bottom: 8px;
+    }
+
+    #live-logs {
+      flex: 1;
+      overflow-y: auto;
+      background: #080808;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      font-family: 'Cascadia Code', Consolas, monospace;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    #live-logs::-webkit-scrollbar {
+      width: 3px;
+    }
+
+    #live-logs::-webkit-scrollbar-thumb {
+      background: var(--border);
+    }
+
+    .ll {
+      margin: 1px 0;
+      word-break: break-all;
+      white-space: pre-wrap;
+      color: var(--muted);
+    }
+
+    .ll.node-evt {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .ll.sys {
+      color: var(--warning);
+    }
+
+    .ll.ok-line {
+      color: var(--ok);
+    }
+
+    .ll.err-line {
+      color: var(--danger);
+    }
+
+    .ll.danger-line { color: #ff6b6b; font-weight: 700; }  
+    .ll.warn-line   { color: #ffd93d; font-weight: 600; }  
+    .ll.temp-line   { color: #6bcbff; }  
+    .ll.report-line { color: #47ff8f; } 
+
+    /* ── FOOTER ── */
+    footer {
+      padding: 10px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .footer-left {
+      display: flex;
+      gap: 20px;
+    }
+
+    /* ── ANIMATIONS ── */
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+  </style>
 </head>
+
 <body>
 
-<h1>무인 매장 멀티에이전트 흐름 <span class="conn" id="conn">연결 중...</span></h1>
-<div class="subtitle">웹 버튼 또는 test_agent.py --web-url 로 들어오는 모든 그래프 실행이 실시간 표시됩니다.</div>
-
-<div class="layout">
-  <div class="panel">
-    <h2>그래프 흐름</h2>
-    <div class="graph-row">
-      <div class="terminal" id="node-start">START</div>
-      <span class="arrow">→</span>
-
-      <div class="node dim" id="node-orchestrator_dispatch">
-        <p class="ttl">오케스트레이터</p>
-        <p class="sub">dispatch · 분배</p>
-      </div>
-      <span class="arrow">→</span>
-
-      <div class="branch">
-        <div class="node dim" id="node-safety">
-          <p class="ttl">안전 에이전트</p>
-          <p class="sub">safety_agent</p>
-        </div>
-        <div class="node dim" id="node-customer">
-          <p class="ttl">고객봇</p>
-          <p class="sub">customer_agent</p>
-        </div>
-        <div class="node dim" id="node-report">
-          <p class="ttl">보고서</p>
-          <p class="sub">report_agent</p>
-        </div>
-      </div>
-      <span class="arrow">→</span>
-
-      <div class="node dim" id="node-orchestrator_reconcile">
-        <p class="ttl">오케스트레이터</p>
-        <p class="sub">reconcile · 정책 결정</p>
-      </div>
-      <span class="arrow">→</span>
-
-      <div class="node dim" id="node-actuator">
-        <p class="ttl">실행</p>
-        <p class="sub">actuator · 부수효과</p>
-      </div>
-      <span class="arrow">→</span>
-
-      <div class="terminal" id="node-end">END</div>
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-dot"></div>
+      <h1>Cafe Check <span>/ AI Dashboard</span></h1>
     </div>
-
-    <div class="legend">
-      <span class="l-active">활성 중</span>
-      <span class="l-passed">통과 완료</span>
-      <span class="l-dim">대기</span>
+    <div class="header-right">
+      <span id="clock">--:--:--</span>
+      <span id="signal-indicator">Connecting...</span>
+      <div class="scenario-bar" id="scenario-bar">
+        <span style="font-size:10px;color:var(--muted)">Loading scenarios...</span>
+      </div>
+      <div class="status-pill">
+        <div class="dot" id="system-dot" style="background:var(--warning)"></div>
+        <span id="system-status-text">Connecting...</span>
+      </div>
     </div>
+  </header>
+
+  <!-- GRAPH FLOW BAR -->
+  <div class="graph-bar">
+    <div class="g-terminal" id="gnode-start">START</div>
+    <span class="g-arrow">→</span>
+    <div class="g-node dim" id="gnode-orchestrator_dispatch">
+      <div class="g-ttl">Orchestrator</div>
+      <div class="g-sub">dispatch · route</div>
+    </div>
+    <span class="g-arrow">→</span>
+    <div class="g-branch">
+      <div class="g-node dim" id="gnode-safety">
+        <div class="g-ttl">Safety Agent</div>
+        <div class="g-sub">safety_agent</div>
+      </div>
+      <div class="g-node dim" id="gnode-customer">
+        <div class="g-ttl">Customer Bot</div>
+        <div class="g-sub">customer_agent</div>
+      </div>
+      <div class="g-node dim" id="gnode-report">
+        <div class="g-ttl">Report Agent</div>
+        <div class="g-sub">report_agent</div>
+      </div>
+    </div>
+    <span class="g-arrow">→</span>
+    <div class="g-node dim" id="gnode-orchestrator_reconcile">
+      <div class="g-ttl">Orchestrator</div>
+      <div class="g-sub">reconcile · decide</div>
+    </div>
+    <span class="g-arrow">→</span>
+    <div class="g-node dim" id="gnode-actuator">
+      <div class="g-ttl">Actuator</div>
+      <div class="g-sub">actuator · effects</div>
+    </div>
+    <span class="g-arrow">→</span>
+    <div class="g-terminal" id="gnode-end">END</div>
   </div>
 
-  <div class="panel">
-    <h2>시나리오 (수동 실행)</h2>
-    <div class="scenarios" id="scenarios"></div>
+  <!-- MAIN -->
+  <main>
 
-    <div class="now" id="now">
-      <div class="label">현재</div>
-      <div class="name" id="now-name">대기 중</div>
-      <div class="summary" id="now-summary"></div>
+    <!-- Panel 1 · Signal Feed -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="icon">📡</span> Signal Feed</div>
+        <span class="badge live" id="signal-count-badge">0 signals</span>
+      </div>
+      <div id="signal-feed">
+        <div class="empty-state" id="feed-empty">
+          <div class="empty-icon">📡</div>
+          <div class="empty-text">No signals yet.<br>
+            Press a <strong style="color:var(--accent)">scenario button</strong> above to begin.
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="result" id="input-box" style="display:none">
-      <h3>요청 (입력)</h3>
-      <pre id="input-content"></pre>
+    <!-- Panel 2 · AI Action Recommendations (Human-Readable) -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="icon">🤖</span> AI Recommendations</div>
+        <span class="badge" id="action-count">0 actions</span>
+      </div>
+      <div id="action-panel">
+        <div class="empty-state" id="action-empty">
+          <div class="empty-icon">🤖</div>
+          <div class="empty-text">
+            The AI hasn't made any recommendations yet.<br>
+            <strong style="color:var(--accent)">Trigger a scenario</strong> above and the AI will
+            analyse the situation and tell you exactly what to do.
+          </div>
+        </div>
+      </div>
     </div>
 
-    <h2 style="margin-top:18px">실시간 로그</h2>
-    <div class="logs" id="logs"></div>
-
-    <div class="result" id="result" style="display:none">
-      <h3>응답 (최종 상태)</h3>
-      <pre id="result-content"></pre>
+    <!-- Panel 3 · Stats, Modules, Sensors, Logs -->
+    <div class="stats-panel">
+      <div class="stat-block">
+        <div class="stat-label">Occupancy</div>
+        <div class="stat-value" id="stat-occ" style="color:var(--accent)">0</div>
+        <div class="stat-sub">people detected</div>
+        <div class="stat-bar">
+          <div class="stat-bar-fill" id="occ-bar" style="width:0%;background:var(--accent)"></div>
+        </div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-label">Signals Received</div>
+        <div class="stat-value" id="stat-sig" style="color:var(--accent2)">0</div>
+        <div class="stat-sub">this session</div>
+      </div>
+      <div class="llm-block">
+        <div class="llm-label">Connected Modules</div>
+        <div class="llm-status-row">
+          <span class="llm-name">Claude AI (LLM)</span>
+          <span class="llm-state" id="llm-claude-state">
+            <span class="llm-dot pending" id="llm-claude-dot"></span> Pending
+          </span>
+        </div>
+        <div class="llm-status-row">
+          <span class="llm-name">OpenCV Camera</span>
+          <span class="llm-state"><span class="llm-dot ready"></span> Ready</span>
+        </div>
+        <div class="llm-status-row">
+          <span class="llm-name">Arduino Sensors</span>
+          <span class="llm-state"><span class="llm-dot ready"></span> Ready</span>
+        </div>
+      </div>
+      <div class="sensor-section">
+        <div class="llm-label">Live Sensor Data</div>
+        <div class="sensor-grid">
+          <div class="sensor-tile">
+            <div class="s-label">Temperature</div>
+            <div class="s-val" id="s-temp">--<span class="s-unit">°C</span></div>
+          </div>
+          <div class="sensor-tile">
+            <div class="s-label">Humidity</div>
+            <div class="s-val" id="s-hum">--<span class="s-unit">%</span></div>
+          </div>
+          <div class="sensor-tile">
+            <div class="s-label">Air Quality</div>
+            <div class="s-val" id="s-air" style="color:var(--ok)">--<span class="s-unit">AQI</span></div>
+          </div>
+          <div class="sensor-tile">
+            <div class="s-label">Lighting</div>
+            <div class="s-val" id="s-light">--<span class="s-unit">lx</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="log-section">
+        <div class="llm-label">⚡ Live Execution Log</div>
+        <div id="live-logs"></div>
+      </div>
     </div>
-  </div>
-</div>
 
-<script>
-const NODE_IDS = [
-  "orchestrator_dispatch", "safety", "customer", "report",
-  "orchestrator_reconcile", "actuator"
-];
+  </main>
 
-const $ = id => document.getElementById(id);
-const buttonsEl = $("scenarios");
-const logsEl    = $("logs");
-const resultEl  = $("result");
-const resultContentEl = $("result-content");
-const inputBoxEl = $("input-box");
-const inputContentEl = $("input-content");
-const connEl    = $("conn");
-const nowNameEl = $("now-name");
-const nowSummaryEl = $("now-summary");
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-left">
+      <span>Perception → Cognition → Control</span>
+      <span id="last-signal">Last signal: —</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button id="export-btn" onclick="exportLogs()" style="
+        background:var(--surface2);color:var(--text);border:1px solid var(--border);
+        border-radius:8px;padding:5px 13px;font-size:10px;font-weight:600;
+        cursor:pointer;letter-spacing:0.04em;text-transform:uppercase;transition:all 0.15s;">
+        ⬇ Export Logs
+      </button>
+      <span>Cafe Check with AI · v0.2 · Live Dashboard</span>
+    </div>
+  </footer>
 
-function resetGraph() {
-  NODE_IDS.forEach(id => {
-    const el = $("node-" + id);
-    el.classList.remove("active", "passed");
-    el.classList.add("dim");
-  });
-  $("node-start").classList.remove("active");
-  $("node-end").classList.remove("active");
-  resultEl.style.display = "none";
-  inputBoxEl.style.display = "none";
-}
 
-function inputOneLiner(input) {
-  if (!input) return "";
-  const t = input.trigger_type;
-  if (t === "customer") {
-    return `[customer] zone=${input.zone_id ?? "?"}  msg="${input.user_message ?? ""}"`;
-  }
-  if (t === "safety") {
-    const ar = input.analysis_result || {};
-    return `[safety] zone=${input.zone_id ?? "?"}  det=${ar.detection_type}  conf=${ar.confidence}  sev=${ar.severity}`;
-  }
-  if (t === "report") {
-    return `[report] zones=${(input.all_zone_ids || []).join(", ")}`;
-  }
-  return JSON.stringify(input);
-}
+  <script>
+    // ─────────────────────────────────────────────  
+    // CONFIG  
+    // ─────────────────────────────────────────────  
+    const API_BASE = ""; // same origin — change to "http://localhost:8000" if needed  
 
-function log(text, cls="") {
-  const div = document.createElement("div");
-  div.className = "log-line " + cls;
-  div.textContent = text;
-  logsEl.appendChild(div);
-  // 로그 너무 길어지면 앞부분 정리
-  if (logsEl.childElementCount > 500) {
-    logsEl.removeChild(logsEl.firstChild);
-  }
-  logsEl.scrollTop = logsEl.scrollHeight;
-}
+    const GRAPH_NODE_IDS = [
+      "orchestrator_dispatch", "safety", "customer",
+      "report", "orchestrator_reconcile", "actuator"
+    ];
 
-function activate(nodeId) {
-  NODE_IDS.forEach(id => {
-    const el = $("node-" + id);
-    if (el.classList.contains("active")) {
-      el.classList.remove("active");
-      el.classList.add("passed");
+    // ─────────────────────────────────────────────  
+    // CLOCK  
+    // ─────────────────────────────────────────────  
+    function updateClock() {
+      document.getElementById('clock').textContent =
+        new Date().toLocaleTimeString('en-GB');
     }
-  });
-  const el = $("node-" + nodeId);
-  if (!el) return;
-  el.classList.remove("dim");
-  el.classList.add("active");
-}
+    updateClock();
+    setInterval(updateClock, 1000);
 
-function srcBadge(source) {
-  return source === "test_agent"
-    ? '<span class="src test_agent">test_agent</span>'
-    : '<span class="src web">web</span>';
-}
+    // ─────────────────────────────────────────────  
+    // SENSOR TICKER (local simulation)  
+    // ─────────────────────────────────────────────  
+    function updateSensors() {
+      document.getElementById('s-temp').innerHTML =
+        `<span class="s-num">${(22 + Math.random() * 8).toFixed(1)}</span><span class="s-unit">°C</span>`;
+      document.getElementById('s-hum').innerHTML =
+        `<span class="s-num">${(45 + Math.random() * 30).toFixed(0)}</span><span class="s-unit">%</span>`;
 
-async function loadScenarios() {
-  const res = await fetch("/scenarios");
-  const data = await res.json();
-  data.forEach(s => {
-    const b = document.createElement("button");
-    b.textContent = s.name;
-    b.dataset.key = s.key;
-    b.onclick = () => triggerScenario(s.key);
-    buttonsEl.appendChild(b);
-  });
-}
+      document.getElementById('s-air').innerHTML =
+        `<span class="s-num">${(60 + Math.random() * 80).toFixed(0)}</span><span class="s-unit">AQI</span>`;
 
-async function triggerScenario(key) {
-  await fetch("/trigger/" + key, { method: "POST" });
-  // 결과 표시는 /stream 이벤트로 들어오는 broadcast가 처리
-}
+      document.getElementById('s-light').innerHTML =
+        `<span class="s-num">${(80 + Math.random() * 400).toFixed(0)}</span><span class="s-unit">lx</span>`;
+    }
+    updateSensors();
+    setInterval(updateSensors, 4000);
 
-// ── /stream 자동 구독 ───────────────────────────────────────────────────
-function connect() {
-  const es = new EventSource("/stream");
+    // ─────────────────────────────────────────────  
+    // STATE  
+    // ─────────────────────────────────────────────  
+    let signalCount = 0;
+    let actionCount = 0;
+    let occupancy = 0;
 
-  es.addEventListener("hello", () => {
-    connEl.textContent = "LIVE";
-    connEl.classList.add("live");
-  });
-
-  es.addEventListener("start", e => {
-    const d = JSON.parse(e.data);
-    resetGraph();
-    $("node-start").classList.add("active");
-    nowNameEl.innerHTML = d.name + " " + srcBadge(d.source);
-    nowSummaryEl.textContent = inputOneLiner(d.input);
-
-    if (d.input) {
-      inputBoxEl.style.display = "block";
-      inputContentEl.textContent = JSON.stringify(d.input, null, 2);
+    // ─────────────────────────────────────────────  
+    // GRAPH HELPERS  
+    // ─────────────────────────────────────────────  
+    function resetGraph() {
+      GRAPH_NODE_IDS.forEach(id => {
+        const el = document.getElementById("gnode-" + id);
+        if (el) { el.classList.remove("active", "passed"); el.classList.add("dim"); }
+      });
+      const start = document.getElementById("gnode-start");
+      const end = document.getElementById("gnode-end");
+      start.classList.remove("active", "passed");
+      end.classList.remove("active", "passed");
     }
 
-    const cls = d.source === "test_agent" ? "system test" : "system";
-    log("▶ [" + d.source + "] " + d.name, cls);
-    if (d.input) log("  요청: " + inputOneLiner(d.input), cls);
-  });
-
-  es.addEventListener("log", e => {
-    const d = JSON.parse(e.data);
-    log(d.line, d.node ? "node-evt" : "");
-    if (d.node) {
-      $("node-start").classList.remove("active");
-      $("node-start").classList.add("passed");
-      activate(d.node);
+    function activateNode(nodeId) {
+      // Mark any currently active node as passed  
+      GRAPH_NODE_IDS.forEach(id => {
+        const el = document.getElementById("gnode-" + id);
+        if (el && el.classList.contains("active")) {
+          el.classList.remove("active");
+          el.classList.add("passed");
+        }
+      });
+      const el = document.getElementById("gnode-" + nodeId);
+      if (!el) return;
+      el.classList.remove("dim");
+      el.classList.add("active");
     }
-  });
 
-  es.addEventListener("done", e => {
-    const d = JSON.parse(e.data);
-    NODE_IDS.forEach(id => {
-      const el = $("node-" + id);
-      if (el.classList.contains("active")) {
-        el.classList.remove("active");
-        el.classList.add("passed");
+    // ─────────────────────────────────────────────  
+    // SCENARIOS — load buttons from /scenarios  
+    // ─────────────────────────────────────────────  
+    async function loadScenarios() {
+      try {
+        const res = await fetch(API_BASE + "/scenarios");
+        const data = await res.json();
+        const bar = document.getElementById("scenario-bar");
+        bar.innerHTML = "";
+        data.forEach(s => {
+          const btn = document.createElement("button");
+          btn.dataset.originalText = s.name;
+          btn.textContent = s.name;
+          btn.dataset.key = s.key;
+          btn.onclick = () => triggerScenario(s.key, btn);
+          bar.appendChild(btn);
+        });
+      } catch (err) {
+        document.getElementById("scenario-bar").innerHTML =
+          '<span style="font-size:10px;color:var(--danger)">⚠ Could not load scenarios</span>';
+        console.error("Failed to load scenarios:", err);
       }
-    });
-    $("node-end").classList.add("active");
+    }
 
-    // test_agent 결과면 PASS/FAIL 표시
-    if (d.source === "test_agent") {
-      if (d.passed) {
-        log("✓ PASS · " + d.name, "ok");
-      } else {
-        log("✗ FAIL · " + d.name + " — " + (d.failures || []).join("; "), "err");
+    async function triggerScenario(key, btn) {
+      // Disable all buttons while the graph is running  
+      document.querySelectorAll("#scenario-bar button").forEach(b => {
+        b.disabled = true;
+        b.classList.add("running");
+      });
+      if (btn) btn.textContent = "⏳ " + btn.textContent.replace("⏳ ", "");
+
+      try {
+        const res = await fetch(API_BASE + "/trigger/" + key, { method: "POST" });
+        if (!res.ok) throw new Error(res.statusText);
+      } catch (err) {
+        liveLog("⚠ Trigger failed: " + err.message, "err-line");
+        reenableButtons();
       }
-    } else {
-      log("✓ 완료 · " + d.name, "ok");
     }
 
-    if (d.state && Object.keys(d.state).length > 0) {
-      resultEl.style.display = "block";
-      resultContentEl.textContent = JSON.stringify(d.state, null, 2);
+    function reenableButtons() {
+      document.querySelectorAll("#scenario-bar button").forEach(b => {
+        b.disabled = false;
+        b.classList.remove("running");
+        b.textContent = b.dataset.originalText || b.textContent.replace("⏳ ", "");
+      });
     }
-  });
 
-  es.addEventListener("error", e => {
-    let msg = "(에러)";
-    try { msg = JSON.parse(e.data).message || msg; } catch (_) {}
-    log("✗ 에러: " + msg, "err");
-  });
+    // ─────────────────────────────────────────────  
+    // SSE — connect to /stream  
+    // ─────────────────────────────────────────────  
+    function connectSSE() {
+      const es = new EventSource(API_BASE + "/stream");
 
-  es.onerror = () => {
-    connEl.textContent = "재연결 중...";
-    connEl.classList.remove("live");
-    es.close();
-    setTimeout(connect, 1500);
+      // Server confirmed connection  
+      es.addEventListener("hello", () => {
+        setSystemStatus(true);
+        setLLMStatus(true);
+        document.getElementById("signal-indicator").textContent = "Stream Live";
+      });
+
+      // A new graph run has started  
+      es.addEventListener("start", e => {
+        const d = JSON.parse(e.data);
+        resetGraph();
+        document.getElementById("gnode-start").classList.add("active");
+        document.getElementById("signal-indicator").textContent = "Running: " + d.name;
+        liveLog("▶ [" + (d.source || "web") + "] " + d.name, "sys");
+      });
+
+      // A node just executed — build a signal card + action card  
+      es.addEventListener("log", e => {
+        const d = JSON.parse(e.data);
+        const text = d.node ? formatLogLine(d) : (d.line || "");
+        const cls  = d.node ? classForLine(d) : "";
+        liveLog(text, cls);
+
+
+        if (d.node) {
+          document.getElementById("gnode-start").classList.remove("active");
+          document.getElementById("gnode-start").classList.add("passed");
+          activateNode(d.node);
+
+          // Add a human-readable signal card  
+          const signal = mapLogToSignal(d);
+          if (signal) addSignal(signal);
+        }
+      });
+
+      // Graph finished  
+      es.addEventListener("done", e => {
+        const d = JSON.parse(e.data);
+
+        GRAPH_NODE_IDS.forEach(id => {
+          const el = document.getElementById("gnode-" + id);
+          if (el && el.classList.contains("active")) {
+            el.classList.remove("active"); el.classList.add("passed");
+          }
+        });
+        document.getElementById("gnode-end").classList.add("active");
+        document.getElementById("signal-indicator").textContent = "✓ Done";
+
+        if (d.passed === true) liveLog("✓ PASS · " + d.name, "ok-line");
+        else if (d.passed === false) liveLog("✗ FAIL · " + d.name, "err-line");
+        else liveLog("✓ Complete · " + d.name, "ok-line");
+
+        // Render a human-readable summary action card from the final state  
+        if (d.state && Object.keys(d.state).length > 0) {
+          addAction(mapStateToAction(d.state, d.name));
+        }
+
+        reenableButtons();
+      });
+
+      // Error from backend  
+      es.addEventListener("backend_error", e => {
+        let msg = "(error)";
+        try { msg = JSON.parse(e.data).message || msg; } catch (_) { }
+        liveLog("✗ Error: " + msg, "err-line");
+      });
+
+      // Keep onerror only for true connection failures  
+      es.onerror = () => {
+        setSystemStatus(false);
+        setLLMStatus(false);
+        document.getElementById("signal-indicator").textContent = "Reconnecting...";
+        es.close();
+        setTimeout(connectSSE, 2000);
+      };
+    }
+
+    // ─────────────────────────────────────────────  
+    // MAP log event → signal card  
+    // Each node gets a plain-English description  
+    // ─────────────────────────────────────────────  
+    const NODE_META = {
+      orchestrator_dispatch: {
+        type: "info", icon: "🔀",
+        source: "AI Brain · Routing",
+        tag: "ROUTING", tagClass: "tag-info",
+        friendlyMsg: "The AI received a new event and is deciding which agents should handle it."
+      },
+      safety: {
+        type: "danger", icon: "🚨",
+        source: "Safety Agent · Monitoring",
+        tag: "SAFETY CHECK", tagClass: "tag-danger",
+        friendlyMsg: "The safety agent is scanning the area for hazards, unusual behaviour, or emergencies."
+      },
+      customer: {
+        type: "info", icon: "💬",
+        source: "Customer Agent · Service",
+        tag: "CUSTOMER", tagClass: "tag-info",
+        friendlyMsg: "The customer service agent is processing a visitor interaction or request."
+      },
+      report: {
+        type: "ok", icon: "📋",
+        source: "Report Agent · Analytics",
+        tag: "REPORT", tagClass: "tag-ok",
+        friendlyMsg: "The report agent is compiling activity logs and generating a summary of events."
+      },
+      orchestrator_reconcile: {
+        type: "warn", icon: "⚖️",
+        source: "AI Brain · Decision",
+        tag: "DECISION", tagClass: "tag-warn",
+        friendlyMsg: "The AI is weighing all agent responses and deciding on the best course of action."
+      },
+      actuator: {
+        type: "ok", icon: "⚡",
+        source: "Actuator · Executing",
+        tag: "ACTION TAKEN", tagClass: "tag-ok",
+        friendlyMsg: "The system is now carrying out the AI's decision — lights, AC, alerts, or display updates."
+      }
+    };
+
+    // REPLACE your entire mapLogToSignal function
+// REPLACE your entire mapLogToSignal function
+function mapLogToSignal(d) {
+  if (!d.node) return null;
+  const meta = NODE_META[d.node];
+  if (!meta) return null;
+
+  // ── Customer fields (from _input_from_state)
+  const zone    = d.zone_id || null;
+  const userMsg = d.user_message || null;
+  const context = d.context || {};
+
+  // ── Safety fields — nested inside analysis_result
+  const analysis = d.analysis_result || {};
+  const det      = analysis.detection_type || null;
+  const conf     = analysis.confidence     != null ? analysis.confidence : null;
+  const sev      = analysis.severity       || null;
+  const signals  = d.signals               || {};
+
+  // ── Build detail line per node type
+  let detail = "";
+
+  if (d.node === "customer" && userMsg) {
+    detail = `💬 <strong style="color:var(--text)">"${userMsg}"</strong>`;
+    if (zone) detail = `📍 <strong style="color:var(--accent2)">${zone}</strong> &nbsp;·&nbsp; ` + detail;
+
+    // Show any extra context fields
+    const extras = Object.entries(context)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => `${k.replace(/_/g," ")}: <strong>${v}</strong>`)
+      .join(" &nbsp;·&nbsp; ");
+    if (extras) detail += `<br><span style="font-size:10px;color:var(--muted)">${extras}</span>`;
+  }
+
+  else if (d.node === "safety") {
+    const confStr  = conf != null ? ` &nbsp;·&nbsp; 🎯 Conf: <strong>${Math.round(conf * 100)}%</strong>` : "";
+    const sevColor = ["high","critical","높음","위험"].includes((sev||"").toLowerCase())
+      ? "var(--danger)"
+      : ["medium","moderate","중간"].includes((sev||"").toLowerCase())
+        ? "var(--warning)" : "var(--ok)";
+
+    if (zone) detail += `📍 <strong style="color:var(--accent2)">${zone}</strong> &nbsp;·&nbsp; `;
+    if (det)  detail += `🔍 <strong style="color:var(--danger)">${det}</strong>${confStr}`;
+    if (sev)  detail += ` &nbsp;·&nbsp; ⚠️ Severity: <strong style="color:${sevColor}">${sev}</strong>`;
+
+    // Show any extra signals fields
+    const sigExtras = Object.entries(signals)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => `${k.replace(/_/g," ")}: <strong>${v}</strong>`)
+      .join(" &nbsp;·&nbsp; ");
+    if (sigExtras) detail += `<br><span style="font-size:10px;color:var(--muted)">${sigExtras}</span>`;
+  }
+
+  else if (d.node === "report") {
+    const zones = Array.isArray(d.all_zone_ids) && d.all_zone_ids.length
+      ? d.all_zone_ids.join(", ")
+      : zone || "all zones";
+    detail = `📊 Report covering: <strong style="color:var(--accent2)">${zones}</strong>`;
+  }
+
+  else if (zone) {
+    detail = `📍 Zone: <strong style="color:var(--accent2)">${zone}</strong>`;
+  }
+
+  // Fallback to raw line
+  const isReadable = d.line && d.line.length < 120 && !d.line.includes("{");
+  const baseMsg = detail || (isReadable ? d.line : meta.friendlyMsg);
+
+  return {
+    type:     meta.type,
+    icon:     meta.icon,
+    source:   meta.source,
+    msg:      baseMsg,
+    tag:      meta.tag,
+    tagClass: meta.tagClass
   };
 }
 
-loadScenarios();
-connect();
-</script>
+
+
+    // ─────────────────────────────────────────────  
+    // MAP backend done.state → human-readable  
+    // action card — the core of the new design  
+    // ─────────────────────────────────────────────  
+    function mapStateToAction(state, runName) {
+      /*  
+       * This function translates the raw graph state object  
+       * into a plain-English action card a café manager  
+       * can read and act on immediately.  
+       *  
+       * It checks known keys from the facility_graph state  
+       * and writes a human sentence for each one found.  
+       */
+
+      const title = friendlyRunTitle(runName, state);
+      const summary = friendlyRunSummary(state);
+      const steps = friendlySteps(state);
+      const priority = derivePriority(state);
+      const icon = deriveIcon(state);
+
+      return {
+        label: icon + " " + title,
+        priority: priority,
+        desc: summary,
+        steps: steps,
+        source: runName || "AI Graph"
+      };
+    }
+
+    // Turn the run name into something readable  
+    // REPLACE friendlyRunTitle
+    function friendlyRunTitle(name, state) {
+      const t = state.trigger_type || "";
+      if (t === "safety") return "Safety Situation Detected";   // ← no emoji  
+      if (t === "customer") return "Customer Interaction Complete";
+      if (t === "report") return "Situation Report Ready";
+
+      if (!name) return "AI Decision Complete";
+      const lower = name.toLowerCase();
+      if (lower.includes("safety") || name.includes("안전")) return "Safety Situation Detected";
+      if (lower.includes("customer") || name.includes("고객")) return "Customer Interaction Complete";
+      if (lower.includes("report") || name.includes("보고")) return "Situation Report Ready";
+      if (lower.includes("normal") || name.includes("정상")) return "Routine Check Complete";
+
+      return "AI Decision Complete";
+    }
+
+    // REPLACE friendlyRunSummary
+    function friendlyRunSummary(state) {
+      const parts = [];
+      const t = state.trigger_type || "";
+
+      if (t === "safety") {  
+        const det  = state.detection_type  
+                  || state.analysis_result?.detection_type  
+                  || "an incident";  
+        const sev  = state.severity  
+                  || state.analysis_result?.severity  
+                  || "unknown";  
+        const conf = state.confidence  
+                  || state.analysis_result?.confidence  
+                  || null;  
+        const zone = state.zone_id || "the monitored area";  
+        const confStr = conf != null ? ` with ${Math.round(conf * 100)}% confidence` : "";  
+
+        parts.push(  
+          `A safety event was detected in zone <strong>${zone}</strong>${confStr}: ` +  
+          `<strong>${det}</strong>. Severity: <strong>${sev}</strong>.`  
+        );  
+      }
+      else if (t === "customer") {  
+        const zone = state.zone_id || "the café";  
+        const msg  = state.user_message || state.message || "a service request";  
+        const resp = state.response || state.ai_response || null;  
+
+        parts.push(  
+          `Customer in zone <strong>${zone}</strong> said: "<em>${msg}</em>". ` +  
+          `The AI handled the interaction and logged the response.`  
+        );  
+        if (resp) parts.push(`AI responded: "${resp}".`);  
+      }
+      else if (t === "report") {
+        const zones = Array.isArray(state.all_zone_ids)
+          ? state.all_zone_ids.join(", ")
+          : "all monitored zones";
+        parts.push(`A full activity report was generated covering: ${zones}.`);
+      }
+      else {
+        // Generic — pull any short readable top-level string values
+        const readable = Object.entries(state)
+          .filter(([k, v]) =>
+            typeof v === "string" && v.length < 80 &&
+            !["trigger_type", "run_id", "timestamp"].includes(k)
+          )
+          .map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)
+          .slice(0, 2)
+          .join(". ");
+
+        parts.push(
+          readable
+            ? `The AI completed its analysis. ${readable}.`
+            : "The AI finished analysing the current situation across all monitored systems."
+        );
+      }
+
+      if (state.final_action)
+        parts.push(`Recommended action: "${state.final_action}".`);
+
+      if (state.alert_sent === true || state.alert_sent === "true")
+        parts.push("An alert notification has already been sent to the admin.");
+
+      return parts.join(" ") || "The AI completed its analysis. Review the steps below.";
+    }
+
+
+    // Numbered steps a person can follow right now  
+    function friendlySteps(state) {
+      const steps = [];
+
+      // Safety scenario steps  
+      if (state.trigger_type === "safety") {
+        const sev = state.severity || state.analysis_result?.severity || "";
+        steps.push("Check the camera feed for the affected zone to confirm the situation.");
+        if (["high", "critical"].includes(sev.toLowerCase()))
+          steps.push("Contact emergency services or on-call staff immediately.");
+        else
+          steps.push("Monitor the area closely for the next 10 minutes.");
+        if (state.recommended_action)
+          steps.push("AI recommends: " + state.recommended_action);
+        steps.push("Acknowledge this alert once you have reviewed it.");
+      }
+
+      // Customer scenario steps  
+      else if (state.trigger_type === "customer") {
+        steps.push("Check the kiosk screen to confirm the customer's request was fulfilled.");
+        if (state.response_sent)
+          steps.push("A response was sent: \"" + state.response_sent + "\"");
+        steps.push("If the customer needs further help, approach them directly.");
+        steps.push("Log any follow-up actions in the staff notes.");
+      }
+
+      // Report scenario steps  
+      else if (state.trigger_type === "report") {
+        steps.push("Review the generated report in the reports dashboard.");
+        if (state.anomalies_detected)
+          steps.push("Anomalies were detected — investigate flagged zones before closing.");
+        steps.push("Share the report with your shift supervisor.");
+        steps.push("Archive the report for compliance records.");
+      }
+
+      // Generic fallback — extract any readable state values  
+      else {
+        const skip = new Set(["trigger_type", "zone_id", "all_zone_ids", "run_id", "timestamp"]);
+        Object.entries(state).forEach(([k, v]) => {
+          if (skip.has(k) || v === null || v === undefined || v === "") return;
+          if (typeof v === "object") return; // skip nested objects  
+          const label = k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+          steps.push(`${label}: ${v}`);
+        });
+      }
+
+      // Always cap at 5 steps so the card doesn't get too long  
+      if (steps.length === 0)
+        steps.push("Review the live log below for full execution details.");
+
+      return steps.slice(0, 5);
+    }
+
+    // Choose priority level from state  
+    // REPLACE derivePriority
+    function derivePriority(state) {
+      const sev = (
+        state.severity ||
+        state.analysis_result?.severity || ""
+      ).toLowerCase();
+
+      // English severity levels
+      if (["critical", "high"].includes(sev)) return "high";
+      if (["medium", "moderate"].includes(sev)) return "med";
+
+      // Korean severity levels
+      if (["높음", "위험", "심각"].includes(sev)) return "high";
+      if (["중간", "보통"].includes(sev)) return "med";
+      if (["낮음", "주의"].includes(sev)) return "low";
+
+      // Fallback by trigger type
+      const t = state.trigger_type || "";
+      if (t === "safety") return "high";
+      if (t === "customer") return "low";
+      if (t === "report") return "auto";
+
+      return "auto";
+    }
+
+
+    // Pick a representative icon from the state  
+    function deriveIcon(state) {
+      const t = state.trigger_type || "";
+      if (t === "safety") return "🚨";
+      if (t === "customer") return "💬";
+      if (t === "report") return "📊";
+      return "✅";
+    }
+
+    // ─────────────────────────────────────────────  
+    // RENDER — Signal Card  
+    // ─────────────────────────────────────────────  
+    function addSignal(s) {
+      signalCount++;
+      document.getElementById("stat-sig").textContent = signalCount;
+      document.getElementById("signal-count-badge").textContent =
+        `${signalCount} signal${signalCount > 1 ? "s" : ""}`;
+
+      const now = new Date().toLocaleTimeString("en-GB");
+      document.getElementById("last-signal").textContent = "Last signal: " + now;
+
+      const empty = document.getElementById("feed-empty");
+      if (empty) empty.remove();
+
+      const feed = document.getElementById("signal-feed");
+      const card = document.createElement("div");
+      card.className = "signal-card s-" + s.type;
+      card.innerHTML = `  
+      <div class="signal-icon">${s.icon}</div>  
+      <div class="signal-body">  
+        <div class="signal-top">  
+          <span class="signal-source" style="color:${sourceColor(s.type)}">  
+            ${s.source}<span class="signal-index">#${signalCount}</span>  
+          </span>  
+          <span class="signal-time">${now}</span>  
+        </div>  
+        <div class="signal-msg">${s.msg}</div>   
+        <span class="signal-tag ${s.tagClass}">${s.tag}</span>  
+      </div>`;
+      feed.prepend(card);
+
+      if (s.occ) {
+        occupancy = Math.max(0, occupancy + s.occ);
+        document.getElementById("stat-occ").textContent = occupancy;
+        document.getElementById("occ-bar").style.width = Math.min(occupancy * 10, 100) + "%";
+      }
+
+      if (s.action) addAction(s.action);
+    }
+
+    // ─────────────────────────────────────────────  
+    // RENDER — Human-Readable Action Card  
+    // ─────────────────────────────────────────────  
+    function addAction(a) {
+      actionCount++;
+      document.getElementById("action-count").textContent =
+        `${actionCount} action${actionCount > 1 ? "s" : ""}`;
+
+      const empty = document.getElementById("action-empty");
+      if (empty) empty.remove();
+
+      // Map priority → CSS class names  
+      const bannerClass = {
+        high: "banner-high", med: "banner-med",
+        low: "banner-low", auto: "banner-auto", info: "banner-info"
+      }[a.priority] || "banner-auto";
+
+      const urgClass = {
+        high: "urg-high", med: "urg-med",
+        low: "urg-low", auto: "urg-auto", info: "urg-info"
+      }[a.priority] || "urg-auto";
+
+      // Human-readable urgency labels  
+      const urgLabel = {
+        high: "🔴 Urgent — Act Now",
+        med: "🟠 Moderate — Review Soon",
+        low: "🔵 Low — When Convenient",
+        auto: "🟢 Automated — No Action Needed",
+        info: "ℹ️ Informational"
+      }[a.priority] || "🟢 Automated";
+
+      // Icon for the banner — use first emoji from label if present  
+      const iconMatch = a.label.match(/(\p{Emoji})/u);
+      const bigIcon = iconMatch ? iconMatch[0] : "🤖";
+
+      // Strip the leading emoji from label for the title text  
+      const titleText = a.label.replace(/^[\p{Emoji}\s]+/u, "").trim();
+
+      // Subtitle from source  
+      const subtitle = a.source
+        ? `Triggered by: ${a.source}`
+        : "AI-generated recommendation";
+
+      const now = new Date().toLocaleTimeString("en-GB");
+
+      const panel = document.getElementById("action-panel");
+      const card = document.createElement("div");
+      card.className = "action-card";
+
+      card.innerHTML = `  
+      <!-- Coloured banner row -->  
+      <div class="action-banner ${bannerClass}">  
+        <div class="action-big-icon">${bigIcon}</div>  
+        <div class="action-banner-text">  
+          <div class="action-title">${titleText}</div>  
+          <div class="action-subtitle">${subtitle}</div>  
+        </div>  
+        <div class="action-urgency-badge ${urgClass}">${urgLabel}</div>  
+      </div>  
+
+      <!-- Card body -->  
+      <div class="action-body">  
+
+        <!-- Plain-English summary -->  
+        <div class="action-summary">${a.desc}</div>  
+
+        <!-- Numbered steps -->  
+        <div>  
+          <div class="action-steps-title">What to do</div>  
+          <ul class="action-steps">  
+            ${a.steps.map((step, i) => `  
+              <li>  
+                <span class="step-num">${i + 1}</span>  
+                <span>${step}</span>  
+              </li>`).join("")}  
+          </ul>  
+        </div>  
+
+      </div>  
+
+      <!-- Footer -->  
+      <div class="action-footer">  
+        <div class="action-footer-left">  
+          <span class="action-source-label">Generated at</span>  
+          <span class="action-source-val">${now}</span>  
+        </div>  
+        <button class="action-btn" onclick="  
+          this.innerHTML='✓ &nbsp;Acknowledged';  
+          this.classList.add('done');  
+          this.disabled=true;">  
+          ✔ Acknowledge  
+        </button>  
+      </div>`;
+
+      panel.prepend(card);
+      while (panel.children.length > 20) {
+        panel.removeChild(panel.lastChild);
+      }
+    }
+
+        // ─────────────────────────────────────────────
+    // SESSION LOG STORE
+    // ─────────────────────────────────────────────
+    const _sessionLog = [];
+
+    // ─────────────────────────────────────────────
+    // LIVE LOG
+    // ─────────────────────────────────────────────
+    function liveLog(text, cls = "") {
+      const logsEl = document.getElementById("live-logs");
+      const div = document.createElement("div");
+      div.className = "ll " + cls;
+      div.textContent = text;
+      logsEl.appendChild(div);
+      if (logsEl.childElementCount > 400) logsEl.removeChild(logsEl.firstChild);
+      logsEl.scrollTop = logsEl.scrollHeight;
+
+      // Push to session store
+      _sessionLog.push({
+        time: new Date().toISOString(),
+        cls: cls || "log",
+        text: text,
+      });
+    }
+
+    // ─────────────────────────────────────────────
+    // FORMAT LOG LINE (smart annotations)
+    // ─────────────────────────────────────────────
+    function formatLogLine(d) {
+      const line    = d.line    || "";
+      const trigger = d.trigger_type;
+      const zone    = d.zone_id || "";
+
+      // ── Customer: temperature changes ──────────
+      if (trigger === "customer") {
+        const msg = d.user_message || "";
+
+        // Catch explicit before→after temp in stdout line
+        const tempArrow = line.match(/(\d+\.?\d*)\s*[→>]\s*(\d+\.?\d*)\s*[°℃C]/i);
+        if (tempArrow) {
+          return `🌡 온도 변경  ${tempArrow[1]}°C → ${tempArrow[2]}°C  (요청: "${msg}")`;
+        }
+
+        // Catch set/apply temp lines — use context.current_temp as "before"
+        const setTemp = line.match(/set.*?temp.*?(\d+\.?\d*)/i)
+                     || line.match(/apply.*?(\d+\.?\d*).*?[°℃]/i)
+                     || line.match(/(\d+\.?\d*)도/);
+        if (setTemp && /temp|온도|degree/i.test(line + msg)) {
+          const before = (d.context || {}).current_temp ?? "?";
+          return `🌡 온도 적용  ${before}°C → ${setTemp[1]}°C  (요청: "${msg}")`;
+        }
+
+        // Cross-zone
+        if (d.cross_zone_request || /전체|모든 구역|전관|매장 전체/i.test(msg)) {
+          return `🔀 크로스존 요청  zone=${zone}  msg="${msg}"  ${line}`;
+        }
+      }
+
+      // ── Safety: always annotate with det/conf/sev ──
+      if (trigger === "safety") {
+        const ar   = d.analysis_result || {};
+        const det  = ar.detection_type || "?";
+        const conf = ar.confidence != null ? `${Math.round(ar.confidence * 100)}%` : "?";
+        const sev  = (ar.severity || "?").toUpperCase();
+        const sevIcon = sev === "HIGH" ? "🔴" : sev === "MEDIUM" ? "🟡" : "🟢";
+        const prefix = `${sevIcon} [${det}]  conf=${conf}  sev=${sev}  zone=${zone}`;
+
+        // Only annotate lines that are about the detection itself
+        if (/detect|safety|anomaly|conflict|alert|severity|routing|agent/i.test(line)) {
+          return `${prefix}  │  ${line}`;
+        }
+      }
+
+      // ── Report ─────────────────────────────────
+      if (trigger === "report" && /report|보고서/i.test(line)) {
+        return `📋 보고서  zone=${zone}  │  ${line}`;
+      }
+
+      return line;
+    }
+
+    function classForLine(d) {
+      const trigger = d.trigger_type;
+      const line    = d.line || "";
+      const ar      = d.analysis_result || {};
+
+      if (trigger === "safety") {
+        const sev = (ar.severity || "").toLowerCase();
+        if (sev === "high" || sev === "critical") return "node-evt danger-line";
+        if (sev === "medium" || sev === "moderate") return "node-evt warn-line";
+        return "node-evt";
+      }
+      if (trigger === "customer" && /온도|temp|temperature|도/i.test(line + (d.user_message || ""))) {
+        return "node-evt temp-line";
+      }
+      if (trigger === "report") return "node-evt report-line";
+      return "node-evt";
+    }
+
+    // ─────────────────────────────────────────────
+    // EXPORT LOGS
+    // ─────────────────────────────────────────────
+    function exportLogs() {
+      if (_sessionLog.length === 0) {
+        alert("No logs to export yet. Run a scenario first.");
+        return;
+      }
+
+      const lines = [
+        "Cafe Check — AI Dashboard Session Log",
+        `Exported: ${new Date().toLocaleString("en-GB")}`,
+        `Total entries: ${_sessionLog.length}`,
+        "=".repeat(60),
+        "",
+        ..._sessionLog.map(e =>
+          `[${e.time}] [${(e.cls || "log").padEnd(14)}] ${e.text}`
+        )
+      ];
+
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `cafe-check-log-${new Date().toISOString().slice(0,19).replace(/:/g,"-")}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      const btn = document.getElementById("export-btn");
+      const orig = btn.textContent;
+      btn.textContent = "✓ Exported!";
+      btn.style.color = "var(--ok)";
+      btn.style.borderColor = "var(--ok)";
+      setTimeout(() => { btn.textContent = orig; btn.style.color = ""; btn.style.borderColor = ""; }, 2000);
+    }
+
+
+    // ─────────────────────────────────────────────  
+    // UI HELPERS  
+    // ─────────────────────────────────────────────  
+    function setSystemStatus(online) {
+      const dot = document.getElementById("system-dot");
+      const text = document.getElementById("system-status-text");
+      if (online) {
+        dot.style.background = "var(--ok)";
+        dot.style.boxShadow = "0 0 6px var(--ok)";
+        text.textContent = "System Online";
+        text.style.color = "var(--ok)";
+      } else {
+        dot.style.background = "var(--danger)";
+        dot.style.boxShadow = "none";
+        text.textContent = "System Offline";
+        text.style.color = "var(--danger)";
+      }
+    }
+
+    function setLLMStatus(ready) {
+      const state = document.getElementById("llm-claude-state");
+      if (ready) {
+        state.innerHTML = '<span class="llm-dot ready" id="llm-claude-dot"></span> Ready';
+      } else {
+        state.innerHTML = '<span class="llm-dot pending" id="llm-claude-dot"></span> Pending';
+      }
+    }
+
+    function sourceColor(type) {
+      return {
+        ok: "var(--ok)",
+        warn: "var(--warning)",
+        danger: "var(--danger)",
+        info: "var(--accent2)"
+      }[type] || "var(--muted)";
+    }
+
+    // ─────────────────────────────────────────────  
+    // INIT  
+    // ─────────────────────────────────────────────  
+    loadScenarios();
+    connectSSE();  
+  </script>
 </body>
+
 </html>
