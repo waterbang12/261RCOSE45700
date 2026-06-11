@@ -46,12 +46,6 @@ OPENAI_API_COOLDOWN_SEC = 30 # OpenAI API 재호출 최소 대기 시간 (초)
 # ── MediaPipe Pose 랜드마크 인덱스 ──────────────────────────────
 _POSE_LEFT_SHOULDER  = 11
 _POSE_RIGHT_SHOULDER = 12
-_HAND_WRIST          = 0
-
-# ── 손 흔들림 감지 ──────────────────────────────────────────────
-HAND_SHAKE_WINDOW_FRAMES  = 8
-HAND_SHAKE_THRESHOLD      = 40
-HAND_SHAKE_TRIGGER_FRAMES = 3
 
 os.makedirs(SAVE_DIR, exist_ok=True)
 os.makedirs(DANGER_SCREENSHOT_DIR, exist_ok=True)
@@ -253,21 +247,29 @@ def save_danger_screenshots(frames):
 # ═══════════════════════════════════════════════════════════════
 
 class BodySwayDetector:
-    """어깨 중심점을 추적해 과도한 몸 흔들림을 감지한다."""
+    """
+    MediaPipe Pose 결과에서 어깨 중심점을 추적하여
+    과도한 몸 흔들림(excessive body sway)을 감지한다.
+
+    동작 흐름:
+      1) 매 프레임 어깨 중심 위치를 슬라이딩 윈도우에 누적
+      2) 윈도우 내 X/Y 범위가 임계값 초과 → is_swaying() = True
+      3) SWAY_TRIGGER_FRAMES 연속으로 흔들림 감지 → 캡처 시작
+      4) SWAY_CAPTURE_COUNT 장 수집 후 'ready' 반환
+    """
 
     def __init__(self):
-        self.left_shoulder_history: list[tuple]  = []
-        self.right_shoulder_history: list[tuple] = []
-        self.sway_consecutive   = 0
-        self.capturing          = False
+        self.position_history: list[tuple] = []
+        self.sway_consecutive  = 0
+        self.capturing         = False
         self.capture_frames: list = []
-        self.capture_countdown  = 0
+        self.capture_countdown = 0
         self.last_api_call_time = 0.0
-        self.hand_position_history: list[tuple] = []
-        self.hand_shake_consecutive = 0
 
-    def _shoulder_positions(self, pose_results, frame_shape) -> tuple | None:
-        """왼쪽·오른쪽 어깨 개별 픽셀 좌표 ((lx,ly),(rx,ry)) 반환."""
+    # ── 내부 헬퍼 ─────────────────────────────────────────────
+
+    def _shoulder_center(self, pose_results, frame_shape) -> tuple | None:
+        """양쪽 어깨 중심 픽셀 좌표 반환. 신뢰도 낮으면 None."""
         if not pose_results.pose_landmarks:
             return None
         lm    = pose_results.pose_landmarks[0]
@@ -276,85 +278,52 @@ class BodySwayDetector:
         right = lm[_POSE_RIGHT_SHOULDER]
         if left.visibility < 0.5 or right.visibility < 0.5:
             return None
-        return (int(left.x * w), int(left.y * h)), (int(right.x * w), int(right.y * h))
-
-    def _shoulder_range(self, history: list[tuple]) -> tuple[int, int]:
-        if len(history) < 2:
-            return 0, 0
-        xs = [p[0] for p in history]
-        ys = [p[1] for p in history]
-        return max(xs) - min(xs), max(ys) - min(ys)
-
-    def _hand_center(self, hand_results, frame_shape) -> tuple | None:
-        """감지된 손목들의 평균 위치 반환."""
-        if not hand_results or not hand_results.hand_landmarks:
-            return None
-        h, w = frame_shape[:2]
-        xs, ys = [], []
-        for hand_lms in hand_results.hand_landmarks:
-            wrist = hand_lms[_HAND_WRIST]
-            xs.append(int(wrist.x * w))
-            ys.append(int(wrist.y * h))
-        return (int(sum(xs) / len(xs)), int(sum(ys) / len(ys)))
-
-    def _is_hand_shaking(self) -> bool:
-        if len(self.hand_position_history) < HAND_SHAKE_WINDOW_FRAMES:
-            return False
-        xs = [p[0] for p in self.hand_position_history]
-        ys = [p[1] for p in self.hand_position_history]
-        return (max(xs) - min(xs) > HAND_SHAKE_THRESHOLD or
-                max(ys) - min(ys) > HAND_SHAKE_THRESHOLD)
-
-    def get_hand_shake_range(self) -> tuple[int, int]:
-        if len(self.hand_position_history) < 2:
-            return 0, 0
-        xs = [p[0] for p in self.hand_position_history]
-        ys = [p[1] for p in self.hand_position_history]
-        return max(xs) - min(xs), max(ys) - min(ys)
+        cx = int((left.x + right.x) * w / 2)
+        cy = int((left.y + right.y) * h / 2)
+        return (cx, cy)
 
     def _is_swaying(self) -> bool:
-        if (len(self.left_shoulder_history) < SWAY_WINDOW_FRAMES or
-                len(self.right_shoulder_history) < SWAY_WINDOW_FRAMES):
+        """슬라이딩 윈도우 내 위치 범위가 임계값을 초과하는지 확인"""
+        if len(self.position_history) < SWAY_WINDOW_FRAMES:
             return False
-        lx, ly = self._shoulder_range(self.left_shoulder_history)
-        rx, ry = self._shoulder_range(self.right_shoulder_history)
-        left_sway  = lx > SWAY_X_THRESHOLD or ly > SWAY_Y_THRESHOLD
-        right_sway = rx > SWAY_X_THRESHOLD or ry > SWAY_Y_THRESHOLD
-        return left_sway and right_sway
+        xs = [p[0] for p in self.position_history]
+        ys = [p[1] for p in self.position_history]
+        return (max(xs) - min(xs) > SWAY_X_THRESHOLD or
+                max(ys) - min(ys) > SWAY_Y_THRESHOLD)
 
-    def get_sway_range(self) -> tuple[int, int, int, int]:
-        """(왼X범위, 왼Y범위, 오른X범위, 오른Y범위)"""
-        lx, ly = self._shoulder_range(self.left_shoulder_history)
-        rx, ry = self._shoulder_range(self.right_shoulder_history)
-        return lx, ly, rx, ry
+    # ── 외부 인터페이스 ────────────────────────────────────────
 
-    def update(self, pose_results, frame, frame_shape, hand_results=None) -> str | None:
+    def get_sway_range(self) -> tuple[int, int]:
+        """현재 윈도우의 (X범위, Y범위) 픽셀값 반환"""
+        if len(self.position_history) < 2:
+            return 0, 0
+        xs = [p[0] for p in self.position_history]
+        ys = [p[1] for p in self.position_history]
+        return max(xs) - min(xs), max(ys) - min(ys)
+
+    def update(self, pose_results, frame, frame_shape) -> str | None:
         """
-        Returns: 'trigger' | 'capturing' | 'ready' | None
+        매 프레임 호출.
+
+        Returns
+        -------
+        'trigger'   : 흔들림 감지, 캡처 시작
+        'capturing' : 캡처 진행 중
+        'ready'     : SWAY_CAPTURE_COUNT 장 캡처 완료
+        None        : 이상 없음
         """
-        positions = self._shoulder_positions(pose_results, frame_shape)
-        if positions is not None:
-            left_pos, right_pos = positions
-            self.left_shoulder_history.append(left_pos)
-            self.right_shoulder_history.append(right_pos)
-            if len(self.left_shoulder_history) > SWAY_WINDOW_FRAMES:
-                self.left_shoulder_history.pop(0)
-            if len(self.right_shoulder_history) > SWAY_WINDOW_FRAMES:
-                self.right_shoulder_history.pop(0)
+        center = self._shoulder_center(pose_results, frame_shape)
+
+        if center is not None:
+            self.position_history.append(center)
+            if len(self.position_history) > SWAY_WINDOW_FRAMES:
+                self.position_history.pop(0)
         else:
-            self.left_shoulder_history.clear()
-            self.right_shoulder_history.clear()
+            # 포즈 미감지 → 히스토리·연속 카운터 초기화
+            self.position_history.clear()
             self.sway_consecutive = 0
 
-        hand_center = self._hand_center(hand_results, frame_shape)
-        if hand_center is not None:
-            self.hand_position_history.append(hand_center)
-            if len(self.hand_position_history) > HAND_SHAKE_WINDOW_FRAMES:
-                self.hand_position_history.pop(0)
-        else:
-            self.hand_position_history.clear()
-            self.hand_shake_consecutive = 0
-
+        # ── 캡처 진행 중 ──────────────────────────────────────
         if self.capturing:
             self.capture_countdown -= 1
             if self.capture_countdown <= 0:
@@ -366,26 +335,21 @@ class BodySwayDetector:
                     return 'ready'
             return 'capturing'
 
+        # ── 흔들림 판단 ───────────────────────────────────────
         if self._is_swaying():
             self.sway_consecutive += 1
         else:
             self.sway_consecutive = max(0, self.sway_consecutive - 1)
 
-        if self._is_hand_shaking():
-            self.hand_shake_consecutive += 1
-        else:
-            self.hand_shake_consecutive = max(0, self.hand_shake_consecutive - 1)
-
+        # ── 트리거 조건 ───────────────────────────────────────
         now = time.time()
-        hand_shaking = self.hand_shake_consecutive >= HAND_SHAKE_TRIGGER_FRAMES
         if (self.sway_consecutive >= SWAY_TRIGGER_FRAMES
-                and hand_shaking
                 and now - self.last_api_call_time > OPENAI_API_COOLDOWN_SEC):
             self.capturing = True
-            self.capture_frames = [frame.copy()]
+            self.capture_frames = [frame.copy()]   # 현재 프레임 포함
             self.capture_countdown = SWAY_CAPTURE_INTERVAL
-            print(f"[DANGER] 몸+손 흔들림 동시 감지! 캡처 시작 "
-                  f"(어깨={self.sway_consecutive}f, 손={self.hand_shake_consecutive}f)")
+            print(f"[DANGER] 몸 흔들림 감지! "
+                  f"캡처 시작 (연속={self.sway_consecutive}프레임)")
             return 'trigger'
 
         return None
@@ -394,6 +358,7 @@ class BodySwayDetector:
         return list(self.capture_frames)
 
     def reset_capture(self):
+        """캡처 버퍼 초기화 및 API 쿨다운 시작"""
         self.capture_frames.clear()
         self.last_api_call_time = time.time()
 
@@ -680,7 +645,7 @@ while True:
 
         # ── 위험 행동 감지 (몸 흔들림) ────────────────────────────
         if pose_results is not None:
-            sway_status = sway_detector.update(pose_results, frame, frame.shape, hand_results)
+            sway_status = sway_detector.update(pose_results, frame, frame.shape)
 
             # 캡처 완료 → 저장 + openai API 비동기 호출
             if sway_status == 'ready' and not danger_analysis_pending:
@@ -697,37 +662,33 @@ while True:
                     t.start()
                     print("[DANGER] OpenAI API 분석 요청 중...")
 
-            # 어깨 위치 시각화 (좌/우 개별)
+            # 어깨 중심점 시각화
             if pose_results.pose_landmarks:
                 lm            = pose_results.pose_landmarks[0]
                 h_img, w_img  = frame.shape[:2]
                 ls            = lm[_POSE_LEFT_SHOULDER]
                 rs            = lm[_POSE_RIGHT_SHOULDER]
-                if ls.visibility >= 0.5:
-                    cv2.circle(display, (int(ls.x * w_img), int(ls.y * h_img)), 8, (255, 100, 0), -1)
-                if rs.visibility >= 0.5:
-                    cv2.circle(display, (int(rs.x * w_img), int(rs.y * h_img)), 8, (0, 140, 255), -1)
+                if ls.visibility >= 0.5 and rs.visibility >= 0.5:
+                    cx = int((ls.x + rs.x) * w_img / 2)
+                    cy = int((ls.y + rs.y) * h_img / 2)
+                    cv2.circle(display, (cx, cy), 8, (255, 100, 0), -1)
 
             # 흔들림 수치 HUD
-            lx, ly, rx, ry = sway_detector.get_sway_range()
+            x_range, y_range = sway_detector.get_sway_range()
             sway_color = (
                 (0, 0, 255) if sway_detector.sway_consecutive >= SWAY_TRIGGER_FRAMES
                 else (0, 200, 200)
             )
             cv2.putText(display,
-                        f'L-Sway X:{lx} Y:{ly}  R-Sway X:{rx} Y:{ry} [{sway_detector.sway_consecutive}f]',
-                        (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, sway_color, 1)
-            hx_range, hy_range = sway_detector.get_hand_shake_range()
-            cv2.putText(display,
-                        f'Hand X:{hx_range} Y:{hy_range} [{sway_detector.hand_shake_consecutive}f]',
-                        (10, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 255), 1)
+                        f'Sway X:{x_range} Y:{y_range}  [{sway_detector.sway_consecutive}f]',
+                        (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.55, sway_color, 1)
 
             # 캡처 중 표시
             if sway_detector.capturing:
                 n_captured = len(sway_detector.capture_frames)
                 cv2.putText(display,
                             f'! DANGER CAPTURING  {n_captured}/{SWAY_CAPTURE_COUNT}',
-                            (10, 145), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                            (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
 
         # ── 기본 HUD ──────────────────────────────────────────────

@@ -17,6 +17,7 @@ async def respond(
     context: dict,
     tts: bool = True,
     all_zone_ids: list[str] | None = None,
+    persona: dict | None = None,
 ) -> dict:
     """
     user_message: 고객이 입력한 텍스트 or 음성 인식 결과
@@ -27,6 +28,8 @@ async def respond(
         "remaining_min": int,
         "reserved_min": int,
     }
+    persona: Nemotron-Personas-Korea 페르소나 dict (없으면 None).
+             persona_manager.get_random_persona() 등으로 생성.
     반환: {"message": str, "audio_path": str | None, "action": dict | None}
     """
     from llm_module.graph import facility_graph
@@ -38,6 +41,7 @@ async def respond(
         user_message=user_message,
         customer_context=context,
         tts_enabled=tts,
+        customer_persona=persona,
     )
 
     result_state = await facility_graph.ainvoke(state)

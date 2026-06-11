@@ -19,6 +19,7 @@ class FacilityState(TypedDict, total=False):
     # 고객봇 에이전트 입력/출력
     user_message: Optional[str]
     customer_context: Optional[dict]
+    customer_persona: Optional[dict]  # Nemotron-Personas-Korea 페르소나 dict
     tts_enabled: bool                # False면 TTS 생성 생략
     bot_response: Optional[dict]     # {message, audio_path, action}
 
@@ -63,6 +64,7 @@ def make_customer_state(
     user_message: str,
     customer_context: dict,
     tts_enabled: bool = True,
+    customer_persona: Optional[dict] = None,
 ) -> FacilityState:
     return FacilityState(
         zone_id=zone_id,
@@ -70,6 +72,7 @@ def make_customer_state(
         all_zone_ids=all_zone_ids,
         user_message=user_message,
         customer_context=customer_context,
+        customer_persona=customer_persona,
         tts_enabled=tts_enabled,
         pending_actions=[],
         anomaly_detected=False,

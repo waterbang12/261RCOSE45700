@@ -3,6 +3,7 @@
 - 안전 우선순위를 시스템 프롬프트에 내재화 (안전 > 고객 편의 > 환경 최적화).
 - "전체/모든 구역" 키워드 감지 시 cross_zone_request 설정 → 오케스트레이터 위임.
 - 환경 제어·TTS 생성은 직접 실행하지 않고 pending_actions로 발행한다.
+- customer_persona 제공 시 Nemotron-Personas-Korea 페르소나 기반 맞춤 응대.
 """
 import asyncio
 import json
@@ -10,10 +11,11 @@ import os
 from openai import OpenAI
 
 from llm_module.state import FacilityState
+from llm_module.persona_manager import format_persona_for_prompt
 
 client = OpenAI()
 
-SYSTEM_PROMPT = """
+_BASE_SYSTEM_PROMPT = """
 당신은 무인 매장(무인 카페·편의점 등)의 AI 안내 도우미입니다.
 우선순위 원칙: 안전 > 고객 편의 > 환경 최적화.
 안전과 관련된 요청이 있으면 반드시 안전을 최우선으로 처리하세요.
@@ -32,7 +34,23 @@ action 형식:
 반드시 JSON으로만 응답하세요.
 """
 
+_PERSONA_SYSTEM_SUFFIX = """
+[고객 페르소나 정보]
+{persona_text}
+
+위 페르소나를 참고해 고객의 연령대·직업·취향에 맞는 어조와 내용으로 응대하세요.
+예: 취미/음식 취향과 관련된 추천, 연령대에 맞는 존댓말 수위 조절 등.
+페르소나 정보를 직접 언급하거나 개인정보를 노출하지 마세요.
+"""
+
 _CROSS_ZONE_KEYWORDS = ["전체", "모든 구역", "전관", "전부", "전 매장", "매장 전체"]
+
+
+def _build_system_prompt(persona: dict | None) -> str:
+    if not persona:
+        return _BASE_SYSTEM_PROMPT
+    persona_text = format_persona_for_prompt(persona)
+    return _BASE_SYSTEM_PROMPT + _PERSONA_SYSTEM_SUFFIX.format(persona_text=persona_text)
 
 
 async def customer_node(state: FacilityState) -> dict:
@@ -40,14 +58,16 @@ async def customer_node(state: FacilityState) -> dict:
     zone_id = state["zone_id"]
     user_message = state.get("user_message") or ""
     context = state.get("customer_context") or {}
+    persona = state.get("customer_persona")
 
+    system_prompt = _build_system_prompt(persona)
     context_str = json.dumps(context, ensure_ascii=False)
     user_content = f"[현재 상황]\n{context_str}\n\n[고객 요청]\n{user_message}\n반드시 JSON으로만 응답하세요."
 
     raw = await asyncio.to_thread(
         client.responses.create,
         model=os.getenv("CUSTOMER_MODEL", "gpt-5-mini"),
-        instructions=SYSTEM_PROMPT,
+        instructions=system_prompt,
         input=user_content,
         text={"format": {"type": "json_object"}},
         service_tier="priority",
